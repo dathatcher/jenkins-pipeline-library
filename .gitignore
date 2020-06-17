@@ -1,0 +1,51 @@
+# OS
+.Trashes
+.Spotlight-V100
+.DS_Store*
+Thumbs.db
+
+# IntelliJ
+.idea/
+*.iml
+
+# Visual Studio
+.vscode/
+**/.project
+**/.classpath
+**/.settings/
+
+# Java/Maven/Gradle
+**/target/
+**/build/
+.gradle/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# Avoid ignoring Maven wrapper jar file (.jar files are usually ignored)
+!/.mvn/wrapper/maven-wrapper.jar
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Log
+*.log
+
+# BlueJ
+*.ctxt
+
+# Packages
+*.zip
+*.tar.gz
+*.rar

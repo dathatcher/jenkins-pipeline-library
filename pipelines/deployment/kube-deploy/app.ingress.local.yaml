@@ -1,0 +1,17 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: app
+  labels:
+    app: app
+spec:
+  tls:
+    - hosts:
+        - app.pipeline.et-apps.net
+  rules:
+    - host: app.pipeline.et-apps.net
+      http:
+        paths:
+          - backend:
+              serviceName: app
+              servicePort: 80

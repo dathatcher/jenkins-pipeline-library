@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: app
+  name: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: app
+        deploymentconfig: app
+    spec:
+      containers:
+      - image: snapshot-registry.pipeline.et-apps.net/cgi/example-spring-boot-app:1.0.0-SNAPSHOT
+        name: app
+        env:
+        - name: "INSTALL4J_ADD_VM_PARAMS"
+          value: "-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -XX:MaxRAMFraction=1"
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources: 
+          limits:
+            cpu: 500m
+            memory: 1024M
+          requests:
+            cpu: 250m
+            memory: 512M
+        volumeMounts:
+        - mountPath: /app-data
+          name: app-data
+      volumes:
+      - persistentVolumeClaim: 
+          claimName: app-data
+        name: app-data

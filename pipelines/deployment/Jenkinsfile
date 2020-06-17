@@ -1,0 +1,247 @@
+// define constants
+String PIPELINE_STDLIB_NAME = "pipeline-library"
+
+env.PIPELINE_CONFIG_FILE = "pipeline.yml"
+
+env.ENV_DEV = "DEV"
+env.ENV_QA = "QA"
+env.ENV_STAGE = "STAGE"
+env.ENV_PROD = "PROD"
+
+env.APPROVAL_GROUP_QA = "qa_approver"
+env.APPROVAL_GROUP_STAGE = "stage_approver"
+env.APPROVAL_GROUP_PROD = "prod_approver"
+
+env.SCM_SERVER_BASE_URL = "https://gitlab.pipeline.et-apps.net"
+env.ARTIFACT_REPO_BASE_URL = "https://nexus.pipeline.et-apps.net"
+env.ARTIFACT_REPO_USER = "jenkins"
+env.MAVEN_SNAPSHOTS_REPO = "cgi-maven-snapshots"
+env.MAVEN_RELEASES_REPO = "cgi-maven-releases"
+env.DOCKER_SNAPSHOTS_REPO = "cgi-docker-snapshots"
+env.DOCKER_RELEASES_REPO = "cgi-docker-releases"
+env.SNAPSHOT = "SNAPSHOT"
+
+env.DEPLOY_PATTERN_KUBERNETES = "kubernetes"
+env.DEPLOY_PATTERN_CONTAINER = "container"
+env.DEPLOY_PATTERN_DOCKER_COMPOSE = "docker-compose"
+env.DEPLOY_PATTERN_DOCKER_COMPOSE_SSH = "docker-compose-ssh"
+
+env.WHITE = "FFFFFF"
+env.RED = "FF0000"
+env.YELLOW = "FFCC00"
+env.GREEN = "00CC00"
+env.BLUE = "0000FF"
+env.STATUS_FAILURE = "FAILURE"
+env.STATUS_BLOCKED = "BLOCKED"
+
+String NOTIFICATION_COLOR = env.GREEN
+String CURRENT_STAGE = ""
+String NOTIFICATION_MESSAGE = "Build completed and is SUCCESSFUL"
+
+// load pipeline config
+String pipelineConfigPayload = readTrusted env.PIPELINE_CONFIG_FILE
+def pipelineConfig = readYaml text: pipelineConfigPayload
+
+// print pipeline config
+echo "##### BEGIN: ${env.PIPELINE_CONFIG_FILE}\r\n${pipelineConfigPayload}\r\n##### END: ${env.PIPELINE_CONFIG_FILE}"
+
+// check pipeline config notification.teams is configured
+if (!pipelineConfig.notification || !pipelineConfig.notification.teams || !pipelineConfig.notification.teams.channel) {
+  echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: notification.teams.channel is undefined"
+} else {
+  if (!pipelineConfig.notification.teams.channel.success || !("${pipelineConfig.notification.teams.channel.success}".toLowerCase().startsWith("http"))) {
+    echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: notification.teams.channel.success is invalid"
+  }
+  if (!pipelineConfig.notification.teams.channel.failure || !("${pipelineConfig.notification.teams.channel.failure}".toLowerCase().startsWith("http"))) {
+    echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: notification.teams.channel.failure is invalid"
+  }
+}
+
+def sendEmail(jobName, buildNumber, recipients, message, status, statusColor, buildUrl, artifactId, artifactVersion, environment) {
+  String emailRecipients = recipients.join(",")
+  String emailSubject = "✅"
+  if ("${statusColor}" != "${env.GREEN}") {
+    emailSubject = "❌"
+  }
+  emailSubject += "${jobName}"
+  String emailBody = "${message}<br>" +
+      "<br>" +
+      "<b>Deployment #:</b> ${buildNumber}<br>" +
+      "<b>Status: <span style=\"background-color:#${statusColor};color:#${env.WHITE}\">${status}</span></b><br>" +
+      "<b>Artifact Id:</b> ${artifactId}<br>" +
+      "<b>Artifact Version:</b> ${artifactVersion}<br>" +
+      "<b>Environment:</b> ${environment}<br>" +
+      "<br>" +
+      "<b><a href=\"${buildUrl}\">View Deployment</a></b><br>"
+
+  // get build log
+  //TODO: cannot implement until: https://issues.jenkins-ci.org/browse/JENKINS-46376
+//  if ("${statusColor}" != "${env.GREEN}") {
+//    List<String> logLines = currentBuild.rawBuild.log(100)
+//    emailBody += "<br>"
+//    emailBody += "<pre>\n"
+//    for (String logLine : logLines) {
+//      emailBody += "${logLine}\n"
+//    }
+//    emailBody += "</pre>"
+//  }
+
+  emailext mimeType: "text/html",
+      from: "\"Jenkins\" <et@cgi.com>",
+      to: emailRecipients,
+      subject: emailSubject,
+      body: emailBody
+}
+
+// load pipeline library
+library("${PIPELINE_STDLIB_NAME}@${pipelineConfig.pipelineLibrary.version}")
+
+List<String> ENVIRONMENTS = [env.ENV_DEV, env.ENV_QA, env.ENV_STAGE, env.ENV_PROD]
+pipelineConfig.deploy.environments = ENVIRONMENTS
+List<String> USERS = ["app_dev", "app_qasit", "app_perf", "app_beta", "app_fiint", "app_prod"]
+pipelineConfig.deploy.users = USERS
+
+String artifactPath = "${pipelineConfig.deploy.artifact.groupId.replaceAll("[.]", "/")}/${pipelineConfig.deploy.artifact.artifactId}/${params.VERSION}/${pipelineConfig.deploy.artifact.artifactId}-${params.VERSION}"
+if (pipelineConfig.deploy.artifact.classifier) {
+  artifactPath += "-${pipelineConfig.deploy.artifact.classifier}"
+}
+artifactPath += ".${pipelineConfig.deploy.artifact.extension}"
+pipelineConfig.deploy.artifact.artifactPath = artifactPath
+
+// start pipeline
+pipeline {
+
+  // every stage must declare the type of agent it wants to use
+  agent none
+
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: "5"))
+  }
+
+  parameters {
+    string(description: "artifact version to deploy (example: X.Y.Z or X.Y.Z-SNAPSHOT)", name: "VERSION")
+    choice(choices: ENVIRONMENTS, description: "environment to deploy to", name: "DEPLOY_ENV")
+  }
+
+  stages {
+
+    stage("Get Approval") {
+      agent any
+//      when {
+//        expression {
+//          return params.DEPLOY_ENV != env.ENV_DEV
+//        }
+//      }
+      steps {
+        script {
+          echo "===== Get Approval ====="
+//          CURRENT_STAGE = env.STAGE_NAME
+//
+//          stdPipelineDeployApproval { pipelineParams = pipelineConfig }
+        }
+      }
+    }
+
+    stage("Deploy Artifact") {
+      agent any
+      steps {
+        script {
+          CURRENT_STAGE = env.STAGE_NAME
+
+          stdPipelineDeployArtifact { pipelineParams = pipelineConfig }
+        }
+      }
+    }
+
+    stage("Update Artifact Metadata") {
+      agent any
+//      when {
+//        expression {
+//          return !params.VERSION.contains(env.SNAPSHOT)
+//        }
+//      }
+      steps {
+        script {
+          echo "===== Update Artifact Metadata ====="
+//          CURRENT_STAGE = env.STAGE_NAME
+//
+//          stdPipelineDeployMetadata { pipelineParams = pipelineConfig }
+        }
+      }
+    }
+
+  }
+
+  post {
+
+    success {
+      script {
+        // send MS Teams notification
+//        if (pipelineConfig.notification.teams) {
+//          office365ConnectorSend color: NOTIFICATION_COLOR,
+//              message: NOTIFICATION_MESSAGE,
+//              status: currentBuild.currentResult,
+//              webhookUrl: pipelineConfig.notification.teams.channel.success
+//        }
+
+        // send email notification
+        if (pipelineConfig.notification.email) {
+          sendEmail(
+              "${currentBuild.fullDisplayName}",
+              "${env.BUILD_NUMBER}",
+              pipelineConfig.notification.email.success,
+              "${NOTIFICATION_MESSAGE}",
+              "${currentBuild.currentResult}",
+              "${NOTIFICATION_COLOR}",
+              "${env.BUILD_URL}",
+              "${pipelineConfig.deploy.artifact.artifactId}",
+              "${params.VERSION}",
+              "${params.DEPLOY_ENV}"
+          )
+        }
+      }
+    }
+
+    unsuccessful {
+      script {
+        if (currentBuild.currentResult == env.STATUS_FAILURE) {
+          NOTIFICATION_MESSAGE = "Build FAILED at stage: [${CURRENT_STAGE}]"
+          NOTIFICATION_COLOR = env.RED
+        } else {
+          NOTIFICATION_MESSAGE = "Build completed but is UNSTABLE"
+          NOTIFICATION_COLOR = env.YELLOW
+        }
+        if (currentBuild.description) {
+          NOTIFICATION_MESSAGE += "<br>${currentBuild.description}"
+        }
+
+        // send MS Teams notification
+//        if (pipelineConfig.notification.teams) {
+//          office365ConnectorSend color: NOTIFICATION_COLOR,
+//              message: NOTIFICATION_MESSAGE,
+//              status: currentBuild.currentResult,
+//              webhookUrl: pipelineConfig.notification.teams.channel.failure
+//        }
+
+        // send email notification
+        if (pipelineConfig.notification.email) {
+          sendEmail(
+              "${currentBuild.fullDisplayName}",
+              "${env.BUILD_NUMBER}",
+              pipelineConfig.notification.email.failure,
+              "${NOTIFICATION_MESSAGE}",
+              "${currentBuild.currentResult}",
+              "${NOTIFICATION_COLOR}",
+              "${env.BUILD_URL}",
+              "${pipelineConfig.deploy.artifact.artifactId}",
+              "${params.VERSION}",
+              "${params.DEPLOY_ENV}"
+          )
+        }
+      }
+    }
+
+  }
+
+}

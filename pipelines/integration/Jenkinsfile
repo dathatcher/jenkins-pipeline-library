@@ -1,0 +1,356 @@
+// define constants
+String PIPELINE_STDLIB_NAME = "pipeline-library"
+
+env.PIPELINE_CONFIG_FILE = "pipeline.yml"
+
+env.ENV_DEV = "DEV"
+
+env.WHITE = "FFFFFF"
+env.RED = "FF0000"
+env.YELLOW = "FFCC00"
+env.GREEN = "00CC00"
+env.BLUE = "0000FF"
+env.STATUS_FAILURE = "FAILURE"
+env.STATUS_BLOCKED = "BLOCKED"
+
+String NOTIFICATION_COLOR = env.GREEN
+String CURRENT_STAGE = ""
+String NOTIFICATION_MESSAGE = "Build completed and is SUCCESSFUL"
+
+env.RELEASE_TYPE = "RELEASES"
+env.SNAPSHOT_TYPE = "SNAPSHOTS"
+env.DEPLOY_TYPE = "DEPLOY"
+
+env.BRANCH_MASTER = "master"
+
+String WORKSPACE_NAME = "pipeline-workspace"
+String PIPELINE_TYPE = env.SNAPSHOT_TYPE
+
+// load pipeline config
+String pipelineConfigPayload = readTrusted env.PIPELINE_CONFIG_FILE
+def pipelineConfig = readYaml text: pipelineConfigPayload
+
+// print pipeline config
+echo "##### BEGIN: ${env.PIPELINE_CONFIG_FILE}\r\n${pipelineConfigPayload}\r\n##### END: ${env.PIPELINE_CONFIG_FILE}"
+
+// check pipeline config notification.teams is configured
+if (!pipelineConfig.notification || !pipelineConfig.notification.teams || !pipelineConfig.notification.teams.channel) {
+  echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: notification.teams.channel is undefined"
+} else {
+  if (!pipelineConfig.notification.teams.channel.success || !("${pipelineConfig.notification.teams.channel.success}".toLowerCase().startsWith("http"))) {
+    echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: notification.teams.channel.success is invalid"
+  }
+  if (!pipelineConfig.notification.teams.channel.failure || !("${pipelineConfig.notification.teams.channel.failure}".toLowerCase().startsWith("http"))) {
+    echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: notification.teams.channel.failure is invalid"
+  }
+}
+
+// check auto-deploy config
+def autoDeploySnapshotBranch = env.BRANCH_MASTER
+if (pipelineConfig.deploy && pipelineConfig.deploy.autoDeploySnapshot && pipelineConfig.deploy.autoDeploySnapshot.branch) {
+  autoDeploySnapshotBranch = pipelineConfig.deploy.autoDeploySnapshot.branch
+}
+if (autoDeploySnapshotBranch != "" && !(autoDeploySnapshotBranch == env.BRANCH_MASTER || autoDeploySnapshotBranch.startsWith("release/") || autoDeploySnapshotBranch.startsWith("hotfix/"))) {
+  echo "WARNING: ${env.PIPELINE_CONFIG_FILE}: deploy.autoDeploySnapshot.branch=\"${autoDeploySnapshotBranch}\" is invalid, resetting value to \"\" (skipping auto-deploy)"
+  autoDeploySnapshotBranch = ""
+}
+
+def sendEmail(jobName, buildNumber, recipients, message, status, statusColor, buildUrl, prId = null, prTitle = null, prAuthor = null, prUrl = null) {
+  String emailRecipients = recipients.join(",")
+  String emailSubject = "✅"
+  if ("${statusColor}" != "${env.GREEN}") {
+    emailSubject = "❌"
+  }
+  emailSubject += "${jobName}"
+  String emailBody = "${message}<br>" +
+      "<br>" +
+      "<b>Build #:</b> ${buildNumber}<br>" +
+      "<b>Status: <span style=\"background-color:#${statusColor};color:#${env.WHITE}\">${status}</span></b><br>"
+  if (prId) {
+    emailBody += "<b>Pull Request Title:</b> ${prTitle}<br>" +
+        "<b>Pull Request Author:</b> ${prAuthor}<br>" +
+        "<br>" +
+        "<b><a href=\"${prUrl}\">View Pull Request</a></b> | "
+  } else {
+    emailBody += "<br>"
+  }
+  emailBody += "<b><a href=\"${buildUrl}\">View Build</a></b><br>"
+
+  // get build log
+  //TODO: cannot implement until: https://issues.jenkins-ci.org/browse/JENKINS-46376
+//  if ("${statusColor}" != "${env.GREEN}") {
+//    List<String> logLines = currentBuild.rawBuild.log(100)
+//    emailBody += "<br>"
+//    emailBody += "<pre>\n"
+//    for (String logLine : logLines) {
+//      emailBody += "${logLine}\n"
+//    }
+//    emailBody += "</pre>"
+//  }
+
+  emailext mimeType: "text/html",
+      from: "\"Jenkins\" <et@cgi.com>",
+      to: emailRecipients,
+      subject: emailSubject,
+      body: emailBody
+}
+
+// load pipeline library
+library("${PIPELINE_STDLIB_NAME}@${pipelineConfig.pipelineLibrary.version}")
+
+//Map stagesMap = [:]
+
+// load custom override library
+//def customLibName = pipelineConfig.customLibrary.name
+//def customLibGitUrl = pipelineConfig.customLibrary.git.url
+//def customLibCredentials = pipelineConfig.customLibrary.git.credentials
+//def customLibBranch = pipelineConfig.customLibrary.git.branch
+//if ("${customLibName}") {
+//library identifier: "${customLibName}@${customLibBranch}",
+//                    retriever: modernSCM([
+//                       $class: "GitSCMSource",
+//                       remote: "${customLibGitUrl}",
+//                       credentialsId: "${customLibCredentials}"
+//                    ])
+//}
+
+echo "##### Starting pipeline for: ${pipelineConfig.project.name}"
+
+// determine if this pipeline is a release job
+// HOME_DIR = <org-name>-(snapshots|releases)
+String HOME_DIR = env.JOB_NAME.split("/", 2)[0]
+if (HOME_DIR.toLowerCase().endsWith("-" + env.RELEASE_TYPE.toLowerCase())) {
+  PIPELINE_TYPE = env.RELEASE_TYPE
+}
+
+//def teamPrefix = pipelineConfig.team.prefix
+
+// start pipeline
+pipeline {
+
+  // every stage must declare the type of agent it wants to use
+  agent none
+
+  options {
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: "5"))
+    disableConcurrentBuilds()
+    skipDefaultCheckout()
+  }
+
+  stages {
+
+//TODO: ensure Maven cache (~/.m2) is not part of workspace for performance reasons
+
+//TODO: insert branch conditional: ${env.BRANCH_NAME}
+
+//TODO: compute stage overrides through external custom lib,
+//TODO: or allow declaration of override in pipeline.yml?
+//    stage("Compute Pipeline Stages") {
+//      steps {
+//        script {
+//          stagesMap = stdTaskParser { pipelineParams = pipelineConfig }
+//        }
+//      }
+//    }
+
+    stage("Build Code") {
+      agent any
+      steps {
+        checkout scm
+        script {
+          CURRENT_STAGE = env.STAGE_NAME
+          if (PIPELINE_TYPE == env.SNAPSHOT_TYPE) {
+            stdBuildSnapshot { pipelineParams = pipelineConfig }
+          } else {  // PIPELINE_TYPE == env.RELEASE_TYPE
+            stdBuildRelease { pipelineParams = pipelineConfig }
+          }
+        }
+        stash name: WORKSPACE_NAME
+      }
+    }
+ stage("Run Unit Tests") {
+
+      //TODO: try to lock-down the agent so it gets reused between stages because stashing is expensive
+      agent any
+      when {
+        expression {
+          PIPELINE_TYPE == env.SNAPSHOT_TYPE
+        }
+      }
+      steps {
+        unstash name: WORKSPACE_NAME
+        script {
+          CURRENT_STAGE = env.STAGE_NAME
+          stdTestUnit { pipelineParams = pipelineConfig }
+        }
+      }
+    }
+
+    stage("Run Functional Tests") {
+      //TODO: try to lock-down the agent so it gets reused between stages because stashing is expensive
+      agent any
+      when {
+        expression {
+          PIPELINE_TYPE == env.SNAPSHOT_TYPE
+        }
+      }
+      steps {
+        unstash name: WORKSPACE_NAME
+        script {
+          CURRENT_STAGE = env.STAGE_NAME
+          stdTestFunctional { pipelineParams = pipelineConfig }
+        }
+        stash name: WORKSPACE_NAME
+      }
+    }
+
+    stage("Scan Code & Dependencies") {
+      agent any
+      steps {
+        //TODO: wrap code with withSonarQubeEnv() in order for the next stage (quality gate) to work
+//        withSonarQubeEnv("SonarQube") {
+//          unstash name: WORKSPACE_NAME
+//          script {
+//            CURRENT_STAGE = env.STAGE_NAME
+//            if (PIPELINE_TYPE == env.SNAPSHOT_TYPE) {
+//              stdScanSnapshot { pipelineParams = pipelineConfig }
+//            } else {  // PIPELINE_TYPE == env.RELEASE_TYPE
+//              stdScanRelease { pipelineParams = pipelineConfig }
+//            }
+//          }
+//        }
+        script {
+          echo "===== Scan Code & Dependencies ====="
+        }
+      }
+    }
+
+    stage("Pass Quality Gate") {
+      agent none
+      steps {
+//TODO:        script {
+//          CURRENT_STAGE = env.STAGE_NAME
+//          stdPassQuality { pipelineParams = pipelineConfig }
+//        }
+        script {
+          echo "===== Pass Quality Gate ====="
+        }
+      }
+    }
+
+    stage("Publish Artifacts") {
+      agent any
+      when {
+        anyOf {
+          branch env.BRANCH_MASTER
+          branch "release/*"
+          branch "hotfix/*"
+        }
+      }
+      steps {
+        unstash name: WORKSPACE_NAME
+        script {
+          CURRENT_STAGE = env.STAGE_NAME
+          if (PIPELINE_TYPE == env.SNAPSHOT_TYPE) {
+            stdPublishSnapshot { pipelineParams = pipelineConfig }
+          } else {  // PIPELINE_TYPE == env.RELEASE_TYPE
+            stdPublishRelease { pipelineParams = pipelineConfig }
+          }
+        }
+      }
+    }
+
+    stage("Start Job: Deploy to DEV") {
+      agent any
+      when {
+        expression {
+          (PIPELINE_TYPE == env.SNAPSHOT_TYPE) && pipelineConfig.deploy && (autoDeploySnapshotBranch != "")
+        }
+        branch autoDeploySnapshotBranch
+      }
+      steps {
+        unstash name: WORKSPACE_NAME
+        script {
+          CURRENT_STAGE = env.STAGE_NAME
+          stdDeployDev { pipelineParams = pipelineConfig }
+        }
+      }
+    }
+
+  }
+
+  post {
+
+    success {
+      script {
+        //TODO: send MS Teams notification
+//        if (pipelineConfig.notification.teams) {
+//          office365ConnectorSend color: NOTIFICATION_COLOR,
+//              message: NOTIFICATION_MESSAGE,
+//              status: currentBuild.currentResult,
+//              webhookUrl: pipelineConfig.notification.teams.channel.success
+//        }
+
+        // send email notification
+        if (pipelineConfig.notification.email) {
+          sendEmail(
+              "${currentBuild.fullDisplayName}",
+              "${env.BUILD_NUMBER}",
+              pipelineConfig.notification.email.success,
+              "${NOTIFICATION_MESSAGE}",
+              "${currentBuild.currentResult}",
+              "${NOTIFICATION_COLOR}",
+              "${env.BUILD_URL}",
+              env.CHANGE_ID,
+              "${env.CHANGE_TITLE}",
+              "${env.CHANGE_AUTHOR} (${env.CHANGE_AUTHOR_DISPLAY_NAME})",
+              "${env.CHANGE_URL}"
+          )
+        }
+      }
+    }
+
+    unsuccessful {
+      script {
+        if (currentBuild.currentResult == env.STATUS_FAILURE) {
+          NOTIFICATION_MESSAGE = "Build FAILED at stage: [${CURRENT_STAGE}]"
+          NOTIFICATION_COLOR = env.RED
+        } else {
+          NOTIFICATION_MESSAGE = "Build completed but is UNSTABLE"
+          NOTIFICATION_COLOR = env.YELLOW
+        }
+        if (currentBuild.description) {
+          NOTIFICATION_MESSAGE += "<br>${currentBuild.description}"
+        }
+
+        //TODO: send MS Teams notification
+//        if (pipelineConfig.notification.teams) {
+//          office365ConnectorSend color: NOTIFICATION_COLOR,
+//              message: NOTIFICATION_MESSAGE,
+//              status: currentBuild.currentResult,
+//              webhookUrl: pipelineConfig.notification.teams.channel.failure
+//        }
+
+        // send email notification
+        if (pipelineConfig.notification.email) {
+          sendEmail(
+              "${currentBuild.fullDisplayName}",
+              "${env.BUILD_NUMBER}",
+              pipelineConfig.notification.email.failure,
+              "${NOTIFICATION_MESSAGE}",
+              "${currentBuild.currentResult}",
+              "${NOTIFICATION_COLOR}",
+              "${env.BUILD_URL}",
+              env.CHANGE_ID,
+              "${env.CHANGE_TITLE}",
+              "${env.CHANGE_AUTHOR} (${env.CHANGE_AUTHOR_DISPLAY_NAME})",
+              "${env.CHANGE_URL}"
+          )
+        }
+      }
+    }
+
+  }
+
+}

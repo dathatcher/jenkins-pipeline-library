@@ -1,0 +1,832 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.cgi</groupId>
+  <artifactId>jenkins-pipeline-library</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+
+  <packaging>jar</packaging>
+
+  <name>CGI - Jenkins Pipeline Library</name>
+  <description>${project.name}</description>
+
+  <organization>
+    <name>CGI Inc.</name>
+    <url>https://www.cgi.com/</url>
+  </organization>
+
+  <scm>
+    <url>https://gitlab.pipeline.et-apps.net/cgi/jenkins-pipeline-library</url>
+    <connection>scm:git:https://gitlab.pipeline.et-apps.net/cgi/jenkins-pipeline-library.git</connection>
+    <developerConnection>scm:git:https://gitlab.pipeline.et-apps.net/cgi/jenkins-pipeline-library.git</developerConnection>
+    <tag>HEAD</tag>
+  </scm>
+
+  <properties>
+
+    <!-- # Build params -->
+    <project.scm.id>cgi-scm</project.scm.id>
+    <project.build.locale>en_US</project.build.locale>
+    <project.build.jdkVersion>1.8</project.build.jdkVersion>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>${project.build.sourceEncoding}</project.reporting.outputEncoding>
+    <groovy.version>2.5.9</groovy.version>
+    <repo.upload.retryAttempts>3</repo.upload.retryAttempts>
+    <test.unit.skipTests>false</test.unit.skipTests>
+    <test.integration.skipTests>false</test.integration.skipTests>
+    <service.name>${project.artifactId}</service.name>
+
+    <!-- # Docker params -->
+    <docker.registry>nexus.pipeline.et-apps.net</docker.registry>
+    <docker.repo>cgi-docker-snapshots</docker.repo>
+    <docker.groupId>cgi</docker.groupId>
+    <docker.artifactId>${service.name}</docker.artifactId>
+    <docker.image.name>${docker.registry}/${docker.repo}/${docker.groupId}/${docker.artifactId}</docker.image.name>
+    <docker.maintainer>"Development | CGI" &lt;et@cgi.com&gt;</docker.maintainer>
+    <docker.service.port>8080</docker.service.port>
+
+    <!-- # Sonar params -->
+    <sonar.host.url>https://sonarqube.pipeline.et-apps.net/</sonar.host.url>
+    <sonar.dependencyCheck.reportPath>${project.build.directory}/dependency-check-report.xml</sonar.dependencyCheck.reportPath>
+    <sonar.dependencyCheck.htmlReportPath>${project.build.directory}/dependency-check-report.html</sonar.dependencyCheck.htmlReportPath>
+
+    <!-- # 3rd-Party params -->
+    <spock.version>1.2-groovy-2.5</spock.version>
+
+  </properties>
+
+  <dependencies>
+
+    <dependency>
+      <groupId>org.codehaus.groovy</groupId>
+      <artifactId>groovy-all</artifactId>
+      <version>${groovy.version}</version>
+      <type>pom</type>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jenkins-ci.main</groupId>
+      <artifactId>jenkins-core</artifactId>
+      <version>2.203</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-cps</artifactId>
+      <version>2.75</version>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+
+    <!-- # Jenkins libraries have their own directory structure that violate the Maven standard (override parent POM) -->
+    <sourceDirectory>${project.basedir}/src</sourceDirectory>
+<!--    <testSourceDirectory>${project.basedir}/test/groovy</testSourceDirectory>-->
+
+    <resources>
+
+      <!-- ### Filtered Resources (override parent POM) -->
+      <resource>
+        <directory>${project.basedir}/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>**/*.properties</include>
+          <include>**/*.yml</include>
+          <include>**/*.yaml</include>
+          <include>**/log4j*.xml</include>
+        </includes>
+      </resource>
+
+      <!-- ### Unfiltered Resources (override parent POM) -->
+      <resource>
+        <directory>${project.basedir}/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>**/*.properties</exclude>
+          <exclude>**/*.yml</exclude>
+          <exclude>**/*.yaml</exclude>
+          <exclude>**/log4j*.xml</exclude>
+        </excludes>
+      </resource>
+
+    </resources>
+
+    <testResources>
+
+      <!-- ### Filtered Resources (override parent POM) -->
+      <testResource>
+        <directory>${project.basedir}/test/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>**/*.properties</include>
+          <include>**/*.yml</include>
+          <include>**/*.yaml</include>
+          <include>**/log4j*.xml</include>
+        </includes>
+      </testResource>
+
+      <!-- ### Unfiltered Resources (override parent POM) -->
+      <testResource>
+        <directory>${project.basedir}/test/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>**/*.properties</exclude>
+          <exclude>**/*.yml</exclude>
+          <exclude>**/*.yaml</exclude>
+          <exclude>**/log4j*.xml</exclude>
+        </excludes>
+      </testResource>
+
+    </testResources>
+
+    <pluginManagement>
+
+      <plugins>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.8.1</version>
+          <configuration>
+            <source>${project.build.jdkVersion}</source>
+            <target>${project.build.jdkVersion}</target>
+            <compilerVersion>${project.build.jdkVersion}</compilerVersion>
+            <encoding>${project.build.sourceEncoding}</encoding>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.gmavenplus</groupId>
+          <artifactId>gmavenplus-plugin</artifactId>
+          <version>1.8.1</version>
+          <configuration>
+            <sourceEncoding>${project.build.sourceEncoding}</sourceEncoding>
+          </configuration>
+          <dependencies>
+            <dependency>
+              <groupId>org.codehaus.groovy</groupId>
+              <artifactId>groovy-all</artifactId>
+              <version>${groovy.version}</version>
+              <scope>runtime</scope>
+              <type>pom</type>
+            </dependency>
+          </dependencies>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>3.2.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>3.1.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>3.1.0</version>
+          <configuration>
+            <filesets>
+              <fileset>
+                <directory>${project.basedir}</directory>
+                <includes>
+                  <include>dependency-reduced-pom.xml</include>
+                </includes>
+              </fileset>
+            </filesets>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>3.1.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-resources-plugin</artifactId>
+          <version>3.1.0</version>
+          <configuration>
+            <encoding>${project.build.sourceEncoding}</encoding>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>3.2.0</version>
+          <configuration>
+            <forceCreation>true</forceCreation>
+            <archive>
+              <manifest>
+                <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                <addClasspath>true</addClasspath>
+                <packageName />
+              </manifest>
+              <manifestEntries>
+                <Jdk-Compatibility-Version>${project.build.jdkVersion}</Jdk-Compatibility-Version>
+                <Maven-Version>${maven.version}</Maven-Version>
+                <Encoding>${project.build.sourceEncoding}</Encoding>
+                <Built-By>${project.organization.name}</Built-By>
+                <Created-By>${project.organization.name}</Created-By>
+                <Created-Date>${date.current}</Created-Date>
+                <Vendor>${project.organization.name}</Vendor>
+                <Vendor-Url>${project.organization.url}</Vendor-Url>
+                <Copyright>Copyright (c) ${date.current.year} ${project.organization.name}</Copyright>
+                <Implementation-Build-Id>${buildNumber}</Implementation-Build-Id>
+              </manifestEntries>
+            </archive>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-war-plugin</artifactId>
+          <version>3.2.3</version>
+          <configuration>
+            <failOnMissingWebXml>false</failOnMissingWebXml>
+            <archive>
+              <manifest>
+                <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                <addClasspath>true</addClasspath>
+                <packageName />
+              </manifest>
+              <manifestEntries>
+                <Jdk-Compatibility-Version>${project.build.jdkVersion}</Jdk-Compatibility-Version>
+                <Maven-Version>${maven.version}</Maven-Version>
+                <Encoding>${project.build.sourceEncoding}</Encoding>
+                <Built-By>${project.organization.name}</Built-By>
+                <Created-By>${project.organization.name}</Created-By>
+                <Created-Date>${date.current}</Created-Date>
+                <Vendor>${project.organization.name}</Vendor>
+                <Vendor-Url>${project.organization.url}</Vendor-Url>
+                <Copyright>Copyright (c) ${date.current.year} ${project.organization.name}</Copyright>
+                <Implementation-Build-Id>${buildNumber}</Implementation-Build-Id>
+              </manifestEntries>
+            </archive>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-assembly-plugin</artifactId>
+          <version>3.2.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.0.0-M4</version>
+          <configuration>
+            <skipTests>${test.unit.skipTests}</skipTests>
+            <argLine>${surefireArgLine}</argLine>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-report-plugin</artifactId>
+          <version>3.0.0-M4</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>3.0.0-M4</version>
+          <configuration>
+            <skipITs>${test.integration.skipTests}</skipITs>
+            <argLine>${failsafeArgLine}</argLine>
+            <!-- # see: https://stackoverflow.com/questions/15496856/failsafe-tests-results-in-sonar -->
+            <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
+            <includes>
+              <!-- # functional tests -->
+              <include>**/FT*.java</include>
+              <include>**/*FT.java</include>
+              <include>**/*FTCase.java</include>
+              <!-- # preserve plugin defaults -->
+              <include>**/IT*.java</include>
+              <include>**/*IT.java</include>
+              <include>**/*ITCase.java</include>
+            </includes>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-release-plugin</artifactId>
+          <version>3.0.0-M1</version>
+          <configuration>
+            <autoVersionSubmodules>true</autoVersionSubmodules>
+            <allowTimestampedSnapshots>false</allowTimestampedSnapshots>
+            <tagNameFormat>@{project.version}</tagNameFormat>
+            <scmCommentPrefix>[RELEASE] </scmCommentPrefix>
+            <pomFileName>pom.xml</pomFileName>
+            <useReleaseProfile>false</useReleaseProfile>
+            <releaseProfiles>create-release</releaseProfiles>
+            <goals>install</goals>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-install-plugin</artifactId>
+          <version>3.0.0-M1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-deploy-plugin</artifactId>
+          <version>3.0.0-M1</version>
+          <configuration>
+            <retryFailedDeploymentCount>${repo.upload.retryAttempts}</retryFailedDeploymentCount>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>build-helper-maven-plugin</artifactId>
+          <version>3.0.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>buildnumber-maven-plugin</artifactId>
+          <version>1.4</version>
+          <configuration>
+            <doCheck>false</doCheck>
+            <doUpdate>false</doUpdate>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>versions-maven-plugin</artifactId>
+          <version>2.7</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-scm-plugin</artifactId>
+          <version>1.11.2</version>
+        </plugin>
+
+        <plugin>
+          <groupId>com.soebes.maven.plugins</groupId>
+          <artifactId>echo-maven-plugin</artifactId>
+          <version>0.3.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>0.8.5</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>1.6.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jxr-plugin</artifactId>
+          <version>3.0.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>io.fabric8</groupId>
+          <artifactId>docker-maven-plugin</artifactId>
+          <version>0.33.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.owasp</groupId>
+          <artifactId>dependency-check-maven</artifactId>
+          <version>5.3.0</version>
+          <configuration>
+            <formats>HTML,XML</formats>
+            <cveUrlModified>https://nexus.pipeline.et-apps.net/nvd-cve/feeds/json/cve/1.1/nvdcve-1.1-modified.json.gz</cveUrlModified>
+            <cveUrlBase>https://nexus.pipeline.et-apps.net/nvd-cve/feeds/json/cve/1.1/nvdcve-1.1-%d.json.gz</cveUrlBase>
+            <outputDirectory>${project.build.directory}</outputDirectory>
+            <retireJsAnalyzerEnabled>false</retireJsAnalyzerEnabled>
+            <!-- # the following analyzers are disabled because they try to reach out to the internet -->
+            <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
+            <nodeAnalyzerEnabled>false</nodeAnalyzerEnabled>
+            <nodeAuditAnalyzerEnabled>false</nodeAuditAnalyzerEnabled>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.sonarsource.scanner.maven</groupId>
+          <artifactId>sonar-maven-plugin</artifactId>
+          <version>3.7.0.1746</version>
+        </plugin>
+
+      </plugins>
+
+    </pluginManagement>
+
+    <plugins>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <!-- # set project.version.lowercase property -->
+          <execution>
+            <id>set-project.version.lowercase-property</id>
+            <goals>
+              <goal>regex-property</goal>
+            </goals>
+            <configuration>
+              <name>project.version.lowercase</name>
+              <value>${project.version}</value>
+              <regex>SNAPSHOT</regex>
+              <replacement>snapshot</replacement>
+              <failIfNoMatch>false</failIfNoMatch>
+            </configuration>
+          </execution>
+          <!-- # set project.version.trimmed property -->
+          <execution>
+            <id>set-project.version.trimmed-property</id>
+            <goals>
+              <goal>regex-property</goal>
+            </goals>
+            <configuration>
+              <name>project.version.trimmed</name>
+              <value>${project.version}</value>
+              <regex>-SNAPSHOT</regex>
+              <replacement />
+              <failIfNoMatch>false</failIfNoMatch>
+            </configuration>
+          </execution>
+          <!-- # set parsedVersion property (parsed project.version into components) -->
+          <execution>
+            <id>set-parsedVersion-property</id>
+            <goals>
+              <goal>parse-version</goal>
+            </goals>
+          </execution>
+          <!-- # set maven.version property -->
+          <execution>
+            <id>set-maven.version-property</id>
+            <goals>
+              <goal>maven-version</goal>
+            </goals>
+          </execution>
+          <!-- # set date.current property -->
+          <execution>
+            <id>set-date.current-property</id>
+            <goals>
+              <goal>timestamp-property</goal>
+            </goals>
+            <configuration>
+              <name>date.current</name>
+              <locale>${project.build.locale}</locale>
+              <pattern>yyyy-MM-dd'T'HH:mm:ssZ</pattern>
+            </configuration>
+          </execution>
+          <!-- # set date.current.simple property -->
+          <execution>
+            <id>set-date.current.simple-property</id>
+            <goals>
+              <goal>timestamp-property</goal>
+            </goals>
+            <configuration>
+              <name>date.current.simple</name>
+              <locale>${project.build.locale}</locale>
+              <pattern>yyyyMMddHHmmss</pattern>
+            </configuration>
+          </execution>
+          <!-- # set date.current.year property -->
+          <execution>
+            <id>set-date.current.year-property</id>
+            <goals>
+              <goal>timestamp-property</goal>
+            </goals>
+            <configuration>
+              <name>date.current.year</name>
+              <locale>${project.build.locale}</locale>
+              <pattern>yyyy</pattern>
+            </configuration>
+          </execution>
+          <!-- # set date.current.humanReadable property -->
+          <execution>
+            <id>set-date.current.humanReadable-property</id>
+            <goals>
+              <goal>timestamp-property</goal>
+            </goals>
+            <configuration>
+              <name>date.current.humanReadable</name>
+              <locale>${project.build.locale}</locale>
+              <pattern>yyyy MMMM d</pattern>
+            </configuration>
+          </execution>
+          <!-- # remove old installed artifacts from local Maven cache to free up local disk space -->
+          <execution>
+            <id>remove-old-installers</id>
+            <goals>
+              <goal>remove-project-artifact</goal>
+            </goals>
+            <configuration>
+              <removeAll>false</removeAll>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>buildnumber-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>get-scm-metadata</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>create</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <configuration>
+          <attach>true</attach>
+        </configuration>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <attach>true</attach>
+          <charset>${project.build.sourceEncoding}</charset>
+          <applyJavadocSecurityFix>true</applyJavadocSecurityFix>
+          <doclint>none</doclint>
+        </configuration>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-report-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>generate-surefire-report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report-only</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <configuration>
+          <outputEncoding>${project.reporting.outputEncoding}</outputEncoding>
+          <append>true</append>
+        </configuration>
+        <executions>
+          <execution>
+            <id>prepare-jacoco-unit-test</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+            <configuration>
+              <destFile>${project.build.directory}/jacoco-ut.exec</destFile>
+              <propertyName>surefireArgLine</propertyName>
+            </configuration>
+          </execution>
+          <execution>
+            <id>prepare-jacoco-integration-test</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>prepare-agent-integration</goal>
+            </goals>
+            <configuration>
+              <destFile>${project.build.directory}/jacoco-it.exec</destFile>
+              <propertyName>failsafeArgLine</propertyName>
+            </configuration>
+          </execution>
+          <execution>
+            <id>merge-jacoco-results</id>
+            <phase>post-integration-test</phase>
+            <goals>
+              <goal>merge</goal>
+            </goals>
+            <configuration>
+              <fileSets>
+                <fileSet>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>*.exec</include>
+                  </includes>
+                </fileSet>
+              </fileSets>
+              <destFile>${project.build.directory}/jacoco.exec</destFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>generate-jacoco-report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+            <configuration>
+              <dataFile>${project.build.directory}/jacoco.exec</dataFile>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>com.soebes.maven.plugins</groupId>
+        <artifactId>echo-maven-plugin</artifactId>
+        <configuration>
+          <echos>
+            <echo>SCM:</echo>
+            <echo>- branch: ${scmBranch}</echo>
+            <echo>- commit: ${buildNumber}</echo>
+            <echo>Properties:</echo>
+            <echo>- docker.image.name=${docker.image.name}</echo>
+            <echo>- project.version=${project.version}</echo>
+          </echos>
+        </configuration>
+        <executions>
+          <execution>
+            <id>print-debug-info</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>echo</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <!-- # Jenkins libraries have their own directory structure that violate the Maven standard (override parent POM) -->
+        <configuration>
+          <sourceEncoding>${project.build.sourceEncoding}</sourceEncoding>
+          <sources>
+            <source>
+              <directory>${project.basedir}/src</directory>
+              <includes>
+                <include>**/*.groovy</include>
+              </includes>
+            </source>
+            <source>
+              <directory>${project.basedir}/vars</directory>
+              <includes>
+                <include>**/*.groovy</include>
+              </includes>
+            </source>
+          </sources>
+          <testSources>
+            <testSource>
+              <directory>${project.basedir}/test/groovy</directory>
+              <includes>
+                <include>**/*.groovy</include>
+              </includes>
+            </testSource>
+          </testSources>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>addSources</goal>
+              <goal>addTestSources</goal>
+              <goal>generateStubs</goal>
+              <goal>compile</goal>
+              <goal>generateTestStubs</goal>
+              <goal>compileTests</goal>
+              <goal>removeStubs</goal>
+              <goal>removeTestStubs</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+
+  </build>
+
+  <reporting>
+
+    <plugins>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jxr-plugin</artifactId>
+      </plugin>
+
+    </plugins>
+
+  </reporting>
+
+  <profiles>
+
+    <profile>
+      <id>create-release</id>
+      <properties>
+        <cgi.env>prod</cgi.env>
+        <test.unit.skipTests>true</test.unit.skipTests>
+        <test.integration.skipTests>true</test.integration.skipTests>
+        <docker.repo>cgi-docker-releases</docker.repo>
+      </properties>
+    </profile>
+
+  </profiles>
+
+  <repositories>
+
+    <repository>
+      <id>central</id>
+      <name>Maven - All</name>
+      <url>https://nexus.pipeline.et-apps.net/repository/maven-all/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+
+  </repositories>
+
+  <pluginRepositories>
+
+    <pluginRepository>
+      <id>central</id>
+      <name>Maven - All</name>
+      <url>https://nexus.pipeline.et-apps.net/repository/maven-all/</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </pluginRepository>
+
+  </pluginRepositories>
+
+  <distributionManagement>
+
+    <repository>
+      <id>cgi-maven-releases</id>
+      <name>CGI - Maven - Releases</name>
+      <url>https://nexus.pipeline.et-apps.net/repository/cgi-maven-releases/</url>
+    </repository>
+
+    <snapshotRepository>
+      <id>cgi-maven-snapshots</id>
+      <name>CGI - Maven - Snapshots</name>
+      <url>https://nexus.pipeline.et-apps.net/repository/cgi-maven-snapshots/</url>
+    </snapshotRepository>
+
+  </distributionManagement>
+
+</project>

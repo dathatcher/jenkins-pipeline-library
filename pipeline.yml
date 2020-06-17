@@ -1,0 +1,92 @@
+# pipeline config
+
+# Project configuration
+project:
+  name: "jenkins-pipeline-library"
+
+# Pipeline Library configuration
+pipelineLibrary:
+  # Version of the Pipeline Library that you would like to use
+  version: "master"
+
+# Build configuration
+build:
+  # Build language to use for build
+  # Note: maps to the language alias defined inside Jenkins: {language.name}-{language.version} (Example: jdk-open-corretto-8.242)
+  language:
+    name: "jdk-open-corretto"
+    version: "8.242"
+  # Build tool to use for build
+  # Note: maps to the tool alias defined inside Jenkins: {tool.name}-{tool.version} (Example: maven-3.6)
+  tool:
+    name: "maven"
+    version: "3.6"
+    settings: "maven-settings-xml"
+
+# Notification configuration
+notification:
+  # Microsoft Teams notification
+  teams:
+    channel:
+      # Microsoft Teams channel (webhook URL) to send pipeline success messages to
+      # Note: in order to skip this type of notification leave this value blank (empty string: "")
+      success: "https://..."
+      # Microsoft Teams channel (webhook URL) to send pipeline failure messages to
+      # Note: in order to skip this type of notification leave this value blank (empty string: "")
+      failure: "https://..."
+  # [Optional] Email notification
+#  email:
+#    # List of emails to send pipeline success messages to
+#    success:
+#      - "first.email@example.com"
+#      - "second.email@example.com"
+#      - "etc."
+#    # List of emails to send pipeline failure messages to
+#    failure:
+#      - "first.email@example.com"
+#      - "second.email@example.com"
+#      - "etc."
+
+# [Optional] Deploy configuration
+# Note: deployment will be skipped if this section is omitted/commented-out
+#deploy:
+#  # [Optional] Auto-deploy SNAPSHOT artifact to DEV environment
+#  autoDeploySnapshot:
+#    # Branch that auto-deploys will happen from
+#    # Valid values: { "master" | "release/*" | "hotfix/*" }
+#    # Default: "master"
+#    # Note: in order to skip auto-deploys leave this value blank (empty string: "")
+#    branch: "master"
+#  # Deployment pattern to use
+#  # Valid values: { "docker-compose" }
+#  pattern: "docker-compose"
+#  # Target group name used by Ansible during deployment
+#  target: "jenkins-pipeline-library"
+#  # Deployment artifact pointer inside artifact repository
+#  artifact:
+#    groupId: "com.cgi"
+#    artifactId: "jenkins-pipeline-library"
+#    # [Optional] only required if artifact has a classifier
+#    classifier: "config"
+#    extension: "tar.gz"
+#  healthcheck:
+#    # Health-check URL to check once deployment is complete
+#    url: "http://localhost:####/health"
+#    # [Optional] Number of attempts to check health-check URL
+#    # Default: 4
+#    retry: 3
+#    # [Optional] Delay (in seconds) to wait in between each attempt at checking the health-check URL
+#    # Default: 15
+#    retryInterval: 20
+
+# [Optional] Integration pipelines stage configuration
+#stages:
+#  build:
+#    # Additional flags to add on the command-line
+#    flags: ""
+#  testUnit:
+#    # Additional flags to add on the command-line
+#    flags: ""
+#  testFunctional:
+#    # Additional flags to add on the command-line
+#    flags: ""
